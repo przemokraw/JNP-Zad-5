@@ -5,6 +5,8 @@
  * Co jest? Czego nie ma?
  *
  * - Trzeba pomyslec nad operator= (to chyba najbardziej trikowa czesc zadania)
+ * PATRZ - http://stackoverflow.com/questions/3279543/what-is-the-copy-and-swap-idiom
+ *
  * - Insert pewnie mam zle.
  * - Generalnie przejrzyj ten kod dobrze bo ja nie jestem pewny moich umiejetnosci C++
  * - No i oczywiscie jak jest tylko deklaracja gdzies to tez tego jeszcze nie ma.
