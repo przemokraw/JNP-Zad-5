@@ -6,10 +6,30 @@
 
 using std::map;
 using std::set;
-using std::pair;
+using std::make_pair;
+using std::make_shared;
 using std::shared_ptr;
 using std::multiset;
 using std::move;
+
+
+class PriorityQueueNotFoundException : public std::exception
+{
+public:
+    const char* what() const noexcept
+    {
+        return "Element not found";
+    }
+};
+
+class PriorityQueueEmptyException : public std::exception
+{
+public:
+    const char* what() const noexcept
+    {
+        return "PriorityQueue is empty";
+    }
+};
 
 template <typename K, typename V>
 class PriorityQueue {
@@ -32,8 +52,6 @@ private:
     typedef map<shared_ptr<K>, multiset<shared_ptr<V>, V_ptr_cmp>, K_ptr_cmp> kvmap;
     typedef map<shared_ptr<V>, multiset<shared_ptr<K>, K_ptr_cmp>, V_ptr_cmp> vkmap;
 
-    map<K, shared_ptr<K>> key_pointer_map;
-    map<V, shared_ptr<V>> value_pointer_map;
     kvmap key_value_map;
     vkmap value_key_map;
     size_t qsize;
@@ -46,8 +64,6 @@ public:
     PriorityQueue()
     {
         try {
-            key_pointer_map = map<K, shared_ptr<K>>();
-            value_pointer_map = map<V, shared_ptr<V>>();
             key_value_map = kvmap();
             value_key_map = vkmap();
             qsize = 0;
@@ -60,10 +76,6 @@ public:
     PriorityQueue(const PriorityQueue<K, V>& queue)
     {
         try {
-            key_pointer_map =
-                    map<const K, shared_ptr<const K>>( queue.key_pointer_map );
-            value_pointer_map =
-                    map<V, shared_ptr<V>>( queue.value_pointer_map );
             key_value_map =
                     kvmap( queue.key_value_map );
             value_key_map =
@@ -78,10 +90,6 @@ public:
     PriorityQueue(PriorityQueue<K, V>&& queue)
     {
         try {
-            key_pointer_map =
-                    map<const K, shared_ptr<const K>>( move(queue.key_pointer_map) );
-            value_pointer_map =
-                    map<V, shared_ptr<V>>( move(queue.value_pointer_map) );
             key_value_map =
                     kvmap( move(queue.key_value_map) );
             value_key_map =
@@ -93,12 +101,12 @@ public:
         }
     }
 
+    // TODO: jeszcze potrzeba  void swap(PriorityQueue<K,V>& queue);
     friend void swap(PriorityQueue<K, V>& lhs, PriorityQueue<K, V>& rhs) noexcept
     {
-        std::swap(lhs.key_pointer_map, rhs.key_pointer_map);
-        std::swap(lhs.value_pointer_map, rhs.value_pointer_map);
         std::swap(lhs.key_value_map, rhs.key_value_map);
         std::swap(lhs.value_key_map, rhs.value_key_map);
+        std::swap(lhs.qsize, rhs.qsize);
     }
 
     PriorityQueue<K, V>& operator=(const PriorityQueue<K, V>& queue)
@@ -125,7 +133,7 @@ public:
         }
     }
 
-    bool empty() const noexcept { return key_value_map.size() == 0; }
+    bool empty() const noexcept { return qsize == 0; }
 
     size_type size() const { return qsize; }
 
@@ -133,35 +141,139 @@ public:
     void insert(const K& key, const V& value)
     {
         try {
+            auto new_key = make_shared<K>(key);
+            auto new_val = make_shared<V>(value);
+
+            auto kv_elem = key_value_map.find(new_key);
+            auto kv_key = kv_elem == key_value_map.end() ? make_shared<K>(key) : kv_elem->first;
+
+            auto vk_elem = value_key_map.find(new_val);
+            auto vk_key = vk_elem == value_key_map.end() ? make_shared<V>(value) : vk_elem->first;
+
+            key_value_map[kv_key].insert(vk_key);
+            value_key_map[vk_key].insert(kv_key);
+
+            qsize++;
         }
         catch (...) {
             throw;
         }
     }
 
-    const V& minValue() const noexcept
+    const V& minValue() const
     {
-        return value_key_map.begin()->first;
+        if (empty())
+            throw PriorityQueueEmptyException();
+        return *(value_key_map.begin()->first);
     }
 
-    const V& maxValue() const noexcept
+    const V& maxValue() const
     {
-        return value_key_map.rbegin()->first;
+        if (empty())
+            throw PriorityQueueEmptyException();
+        return *(value_key_map.rbegin()->first);
     }
 
-    const K& minKey() const noexcept
+    const K& minKey() const
     {
-        return value_key_map.begin()->second;
+        if (empty())
+            throw PriorityQueueEmptyException();
+        return **(value_key_map.begin()->second.begin());
     }
-    const K& maxKey() const noexcept
+    const K& maxKey() const
     {
-        return value_key_map.rbegin()->second;
+        if (empty())
+            throw PriorityQueueEmptyException();
+        return **(value_key_map.rbegin()->second.rbegin());
     }
 
-    // TODO: All stuff below + global operations
+
+    void deleteMin()
+    {
+        if (!qsize) return;
+
+        try {
+            auto min_val_elem = value_key_map.begin(); // O(1)
+            auto min_key_elem = key_value_map.find(*(min_val_elem->second.begin())); // O(log(size))
+
+            min_key_elem->second.erase(min_key_elem->second.begin()); // O(1) (amortized)
+            min_val_elem->second.erase(min_val_elem->second.begin()); // O(1) (amortized)
+
+            qsize--;
+
+            if (min_key_elem->second.empty()) // O(1)
+                key_value_map.erase(min_key_elem); // O(1) (amortized)
+            if (min_val_elem->second.empty()) // O(1)
+                value_key_map.erase(min_val_elem); // O(1) (amortized)
+        }
+        catch (...) {
+            throw;
+        }
+    }
+
+    void deleteMax()
+    {
+        if (!qsize) return;
+
+        try {
+            auto max_val_elem = std::prev(value_key_map.end());
+            auto max_key_elem = key_value_map.find(*(std::prev(max_val_elem->second.end())));
+
+            max_key_elem->second.erase(std::prev(max_key_elem->second.end()));
+            max_val_elem->second.erase(std::prev(max_val_elem->second.end()));
+
+            qsize--;
+
+            if (max_key_elem->second.empty())
+                key_value_map.erase(max_key_elem);
+            if (max_val_elem->second.empty())
+                value_key_map.erase(max_val_elem);
+            }
+        catch (...) {
+            throw;
+        }
+    }
+
+    void changeValue(const K& key, const V& value)
+    {
+        try {
+            auto key_elem = key_value_map.find(make_shared<K>(key));
+            if (key_elem == key_value_map.end())
+                throw PriorityQueueNotFoundException();
+
+            // usunięcie pierwszej wartości w multisecie o kluczu key
+            auto val = *(key_elem->second.begin());
+            value_key_map[val].erase(key_elem->first);
+            key_elem->second.erase(key_elem->second.begin());
+            if (key_elem->second.empty())
+                key_value_map.erase(key_elem);
+            if (value_key_map[val].empty())
+                value_key_map.erase(val);
+            qsize--;
+
+            // wstawienie nowej wartości
+            // TODO: można szybciej, bo tak to wartość key jest wyszukiwana po raz drugi
+            insert(key,value); // O(log(size))
+        }
+        catch (...) {
+            throw;
+        }
+    }
+
+    void merge(PriorityQueue<K, V>& queue)
+    {
+        try {
+            while (!queue.empty()) { // O(queue.size)
+                this->insert(queue.minKey(), queue.minValue()); // minKey, minValue - O(1), insert - O(log(size))
+                queue.deleteMin(); // O(log(queue.size))
+            }
+            // Summary: O(queue.size * (O(log(size)) + O(loq(queue.size))))
+        }
+        catch (...) {
+            throw;
+        }
+    }
+
+    // TODO: 
     // ==, !=, <, >, <=, >=
-    void deleteMin();
-    void deleteMax();
-    void changeValue(const K& key, const V& value);
-    void merge(PriorityQueue<K, V>& queue);
 };
