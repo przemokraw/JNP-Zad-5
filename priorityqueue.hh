@@ -94,26 +94,32 @@ public:
                     kvmap( move(queue.key_value_map) );
             value_key_map =
                     vkmap( move(queue.value_key_map) );
-            qsize = queue.qsize;
+            qsize = move(queue.qsize);
+            queue.qsize=0;
+            
         }
         catch (...) {
             throw;
         }
     }
 
-    // TODO: jeszcze potrzeba  void swap(PriorityQueue<K,V>& queue);
+    void swap(PriorityQueue<K, V>& queue) noexcept
+    {
+        std::swap(this->key_value_map, queue.key_value_map);
+        std::swap(this->value_key_map, queue.value_key_map);
+        std::swap(this->qsize, queue.qsize);
+    }
+
     friend void swap(PriorityQueue<K, V>& lhs, PriorityQueue<K, V>& rhs) noexcept
     {
-        std::swap(lhs.key_value_map, rhs.key_value_map);
-        std::swap(lhs.value_key_map, rhs.value_key_map);
-        std::swap(lhs.qsize, rhs.qsize);
+        lhs.swap(rhs);
     }
 
     PriorityQueue<K, V>& operator=(const PriorityQueue<K, V>& queue)
     {
         try {
             PriorityQueue<K, V> temp( queue );
-            swap(*this, temp);
+            this->swap(temp);
             return *this;
         }
         catch (...) {
@@ -125,7 +131,7 @@ public:
     {
         try {
             PriorityQueue<K, V> temp( move(queue) );
-            swap(*this, temp);
+            this->swap(temp);
             return *this;
         }
         catch (...) {
@@ -156,6 +162,7 @@ public:
             qsize++;
         }
         catch (...) {
+            // TODO: sprzątanie
             throw;
         }
     }
@@ -262,18 +269,144 @@ public:
 
     void merge(PriorityQueue<K, V>& queue)
     {
+        if (this == &queue)
+            return;
         try {
-            while (!queue.empty()) { // O(queue.size)
-                this->insert(queue.minKey(), queue.minValue()); // minKey, minValue - O(1), insert - O(log(size))
-                queue.deleteMin(); // O(log(queue.size))
+            PriorityQueue<K,V> temp = *this;
+            PriorityQueue<K,V> queue_temp = queue;
+            while (!queue_temp.empty()) { // O(queue.size)
+                temp.insert(queue_temp.minKey(), queue_temp.minValue()); // minKey, minValue - O(1), insert - O(log(size))
+                queue_temp.deleteMin(); // O(log(queue.size))
             }
-            // Summary: O(queue.size * (O(log(size)) + O(loq(queue.size))))
+            swap(temp);
+            queue.key_value_map.clear();
+            queue.value_key_map.clear();
+            queue.qsize = 0;
         }
         catch (...) {
             throw;
         }
     }
 
-    // TODO: 
-    // ==, !=, <, >, <=, >=
+    bool operator==(const PriorityQueue<K,V>& queue) const
+    {
+        if (qsize != queue.qsize)
+            return false;
+        auto it1 = this->key_value_map.begin();
+        auto it2 = queue.key_value_map.begin();
+        for (; it1 != this->key_value_map.end(); it1++) {
+
+            if (*it1->first < *it2->first || *it2->first < *it1->first)
+                return false;
+
+            if (it1->second.size() != it2->second.size())
+                return false;
+
+            auto set_it1 = it1->second.begin();
+            auto set_it2 = it2->second.begin();
+            for (; set_it1 != it1->second.end(); set_it1++) {
+                if (**set_it1 < **set_it2 || **set_it2 < **set_it1)
+                    return false;
+                set_it2++;
+            }
+            it2++;
+        }
+        return true;
+    }
+
+    bool operator!=(const PriorityQueue<K,V>& queue) const
+    {
+        return !(*this == queue);
+    }
+
+    bool operator<(const PriorityQueue<K,V>& queue) const
+    {
+        auto it1 = this->key_value_map.begin();
+        auto it2 = queue.key_value_map.begin();
+        while (it1 != this->key_value_map.end() && it2 != queue.key_value_map.end()) {
+            // w tym miejscu wszysztkie sprawdzone do tej pory  pary w kolejkach
+            // są równe
+
+            // pierwsze elementy z pary są różnią, nie ma po co dalej porównywać
+            if (*it1->first < *it2->first)
+                return true;
+            if (*it2->first < *it1->first)
+                return false;
+
+            // it1->first == it2->first
+            auto set_it1 = it1->second.begin();
+            auto set_it2 = it2->second.begin();
+            while (set_it1 != it1->second.end() && set_it2 != it2->second.end()) {
+                if (**set_it1 < **set_it2)
+                    return true;
+                if (**set_it2 < **set_it1)
+                    return false;
+                set_it1++;
+                set_it2++;
+            }
+
+            // set_it1 doszedł do końca lub set_it2 doszedł do końca
+            // ale oba sety miały inną liczbę elementów
+            // (kolejki na pewno nie są zatem równe)
+            if (it1->second.size() != it2->second.size()) {
+                if (set_it1 == it1->second.end()) {
+                    if (std::next(it1) != this->key_value_map.end())
+                        return false;
+                    else
+                        return true;
+                }
+                if (set_it1 == it2->second.end()) {
+                    if (std::next(it2) != queue.key_value_map.end())
+                        return true;
+                    else
+                        return false;
+                }
+            }
+            it2++;
+            it1++;
+        }
+
+        // któraś kolejka się skończyła
+        if (it2 == queue.key_value_map.end())
+            return false;
+        else
+            return true;
+    }
+
+    bool operator>(const PriorityQueue<K,V>& queue) const
+    {
+        return queue < *this;
+    }
+
+    bool operator>=(const PriorityQueue<K,V>& queue) const
+    {
+        return !(*this < queue);
+    }
+
+    bool operator<=(const PriorityQueue<K,V>& queue) const
+    {
+        return !(queue < *this);
+    }
+
+    void print() {
+        std::cout << "====\n";
+        std::cout << "K->V: ";
+        for (auto it : key_value_map) {
+            std::cout << "\t" << *(it.first) << " -> [";
+            for (auto it2: it.second)
+                std::cout << *it2 << " ";
+            std::cout << "]\n";
+        }
+        std::cout << "V->K: ";
+        for (auto it : value_key_map) {
+            std::cout << "\t" << *(it.first) << " -> [";
+            for (auto it2: it.second)
+                std::cout << *it2 << " ";
+            std::cout << "]\n";
+        }
+        std::cout << "====\n";
+           
+    }
 };
+
+
